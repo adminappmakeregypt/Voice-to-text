@@ -70,6 +70,33 @@ button:active { transform: scale(0.97); }
 button.primary { background: #2a5298; color: #fff; }
 button.danger { background: #e74c3c; color: #fff; }
 
+.tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 14px; }
+.tab { background: #eef2f8; }
+.tab.active { background: #1e3c72; color: #fff; }
+
+.settings {
+  background: #f6f8fc;
+  border: 1px solid #dde3ee;
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin-bottom: 14px;
+}
+.settings summary { cursor: pointer; font-weight: 600; color: #1e3c72; }
+.settings label { margin-top: 10px; }
+.settings input {
+  width: 100%;
+  padding: 9px;
+  border: 2px solid #dde3ee;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  direction: ltr;
+}
+button.small { margin-top: 10px; padding: 8px 20px; background: #2a5298; color: #fff; }
+.hint { font-size: 0.8rem; color: #777; margin-top: 8px; }
+
+.download { width: 100%; margin-top: 12px; background: #27ae60; color: #fff; }
+audio { width: 100%; margin-top: 12px; }
+
 .status { text-align: center; margin-top: 16px; color: #555; font-size: 0.9rem; }
 
 @media (max-width: 560px) {

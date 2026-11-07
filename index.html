@@ -10,7 +10,23 @@
   <main class="card">
     <h1>🔊 تحويل النص إلى صوت</h1>
 
-    <textarea id="text" placeholder="اكتب النص هنا...">مرحبا، هذا برنامج لتحويل النص إلى صوت.</textarea>
+    <div class="tabs">
+      <button class="tab active" data-engine="azure">⭐ جودة عالية (Azure)</button>
+      <button class="tab" data-engine="browser">أصوات المتصفح (مجاني)</button>
+    </div>
+
+    <!-- إعدادات Azure -->
+    <details id="azureSettings" class="settings">
+      <summary>⚙️ إعدادات Azure (المفتاح والمنطقة)</summary>
+      <label for="azKey">Speech Key</label>
+      <input type="password" id="azKey" placeholder="الصق المفتاح هنا">
+      <label for="azRegion">Region</label>
+      <input type="text" id="azRegion" placeholder="مثال: westeurope أو eastus">
+      <button id="saveAz" class="small">حفظ</button>
+      <p class="hint">المفتاح بيتحفظ على جهازك بس (localStorage) ومش بيترفع على GitHub.</p>
+    </details>
+
+    <textarea id="text" placeholder="اكتب النص هنا...">مرحبا، هذا برنامج لتحويل النص إلى صوت بجودة عالية.</textarea>
     <div class="counter"><span id="count">0</span> حرف</div>
 
     <label for="voice">الصوت</label>
@@ -23,7 +39,7 @@
       </div>
       <div class="field">
         <label for="pitch">طبقة الصوت: <span id="pitchVal">1</span></label>
-        <input type="range" id="pitch" min="0" max="2" step="0.1" value="1">
+        <input type="range" id="pitch" min="0.5" max="1.5" step="0.1" value="1">
       </div>
       <div class="field">
         <label for="volume">مستوى الصوت: <span id="volumeVal">1</span></label>
@@ -37,6 +53,9 @@
       <button id="resume">⏯ استكمال</button>
       <button id="stop" class="danger">⏹ إيقاف</button>
     </div>
+
+    <button id="download" class="download" hidden>⬇ تحميل MP3</button>
+    <audio id="player" controls hidden></audio>
 
     <p id="status" class="status">جاهز</p>
   </main>
