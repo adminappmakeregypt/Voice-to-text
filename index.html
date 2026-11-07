@@ -3,19 +3,18 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>تحويل النص إلى صوت</title>
+  <title>تحويل الفيديو إلى نص</title>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
   <main class="card">
-    <h1>🔊 تحويل النص إلى صوت</h1>
+    <h1>🎬 تحويل الفيديو إلى نص</h1>
 
     <div class="tabs">
-      <button class="tab active" data-engine="azure">⭐ جودة عالية (Azure)</button>
-      <button class="tab" data-engine="browser">أصوات المتصفح (مجاني)</button>
+      <button class="tab active" data-engine="azure">⭐ Azure (سريع ودقيق)</button>
+      <button class="tab" data-engine="whisper">Whisper (مجاني على جهازك)</button>
     </div>
 
-    <!-- إعدادات Azure -->
     <details id="azureSettings" class="settings">
       <summary>⚙️ إعدادات Azure (المفتاح والمنطقة)</summary>
       <label for="azKey">Speech Key</label>
@@ -23,41 +22,45 @@
       <label for="azRegion">Region</label>
       <input type="text" id="azRegion" placeholder="مثال: westeurope أو eastus">
       <button id="saveAz" class="small">حفظ</button>
-      <p class="hint">المفتاح بيتحفظ على جهازك بس (localStorage) ومش بيترفع على GitHub.</p>
+      <p class="hint">المفتاح بيتحفظ على جهازك بس، ومش موجود في الكود.</p>
     </details>
 
-    <textarea id="text" placeholder="اكتب النص هنا...">مرحبا، هذا برنامج لتحويل النص إلى صوت بجودة عالية.</textarea>
-    <div class="counter"><span id="count">0</span> حرف</div>
-
-    <label for="voice">الصوت</label>
-    <select id="voice"></select>
-
-    <div class="row">
-      <div class="field">
-        <label for="rate">السرعة: <span id="rateVal">1</span></label>
-        <input type="range" id="rate" min="0.5" max="2" step="0.1" value="1">
-      </div>
-      <div class="field">
-        <label for="pitch">طبقة الصوت: <span id="pitchVal">1</span></label>
-        <input type="range" id="pitch" min="0.5" max="1.5" step="0.1" value="1">
-      </div>
-      <div class="field">
-        <label for="volume">مستوى الصوت: <span id="volumeVal">1</span></label>
-        <input type="range" id="volume" min="0" max="1" step="0.1" value="1">
-      </div>
+    <div id="whisperSettings" class="settings" hidden>
+      <label for="model">الموديل</label>
+      <select id="model">
+        <option value="Xenova/whisper-base">Base — أسرع (~80MB)</option>
+        <option value="Xenova/whisper-small" selected>Small — أدق (~250MB)</option>
+      </select>
+      <p class="hint">أول مرة بيحمّل الموديل، وبعد كده بيشتغل من غير نت. الفيديو مش بيخرج من جهازك.</p>
     </div>
+
+    <label for="lang">لغة الكلام</label>
+    <select id="lang">
+      <option value="ar-EG|arabic">العربية (مصري)</option>
+      <option value="ar-SA|arabic">العربية (فصحى/سعودي)</option>
+      <option value="en-US|english">English</option>
+      <option value="fr-FR|french">Français</option>
+    </select>
+
+    <label class="drop" id="drop">
+      <input type="file" id="file" accept="video/*,audio/*" hidden>
+      <span id="dropText">📁 اختار فيديو أو ملف صوت، أو اسحبه هنا</span>
+    </label>
+
+    <video id="preview" controls hidden></video>
+
+    <button id="start" class="primary wide" disabled>✍️ حوّل لنص</button>
+
+    <div class="progress" id="progressWrap" hidden><div id="progressBar"></div></div>
+    <p id="status" class="status">جاهز</p>
+
+    <textarea id="output" placeholder="النص هيظهر هنا..."></textarea>
 
     <div class="buttons">
-      <button id="speak" class="primary">▶ تشغيل</button>
-      <button id="pause">⏸ إيقاف مؤقت</button>
-      <button id="resume">⏯ استكمال</button>
-      <button id="stop" class="danger">⏹ إيقاف</button>
+      <button id="copy">📋 نسخ</button>
+      <button id="dlTxt">⬇ TXT</button>
+      <button id="dlSrt">⬇ SRT (ترجمة)</button>
     </div>
-
-    <button id="download" class="download" hidden>⬇ تحميل MP3</button>
-    <audio id="player" controls hidden></audio>
-
-    <p id="status" class="status">جاهز</p>
   </main>
 
   <script src="script.js"></script>

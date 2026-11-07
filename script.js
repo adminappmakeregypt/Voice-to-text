@@ -1,33 +1,12 @@
 const $ = (id) => document.getElementById(id);
-const synth = window.speechSynthesis;
 
-const textEl = $("text");
-const voiceEl = $("voice");
 const statusEl = $("status");
-const player = $("player");
-const downloadBtn = $("download");
-
-let engine = lsGet("engine") || "azure";
-let browserVoices = [];
-let lastAudioUrl = null;
-
-// أصوات Azure العربية (Neural)
-const AZURE_VOICES = [
-  { id: "ar-EG-SalmaNeural",   label: "سلمى — مصري (أنثى)" },
-  { id: "ar-EG-ShakirNeural",  label: "شاكر — مصري (ذكر)" },
-  { id: "ar-SA-ZariyahNeural", label: "زارية — سعودي (أنثى)" },
-  { id: "ar-SA-HamedNeural",   label: "حامد — سعودي (ذكر)" },
-  { id: "ar-AE-FatimaNeural",  label: "فاطمة — إماراتي (أنثى)" },
-  { id: "ar-AE-HamdanNeural",  label: "حمدان — إماراتي (ذكر)" },
-  { id: "ar-JO-SanaNeural",    label: "سناء — أردني (أنثى)" },
-  { id: "ar-JO-TaimNeural",    label: "تيم — أردني (ذكر)" },
-  { id: "ar-MA-MounaNeural",   label: "منى — مغربي (أنثى)" },
-  { id: "ar-MA-JamalNeural",   label: "جمال — مغربي (ذكر)" },
-  { id: "en-US-JennyNeural",   label: "Jenny — English US (F)" },
-  { id: "en-US-GuyNeural",     label: "Guy — English US (M)" },
-  { id: "en-GB-SoniaNeural",   label: "Sonia — English UK (F)" },
-  { id: "fr-FR-DeniseNeural",  label: "Denise — Français (F)" },
-];
+const output = $("output");
+const startBtn = $("start");
+let engine = lsGet("stt_engine") || "azure";
+let file = null;
+let segments = [];
+let worker = null;
 
 /* ---------- الواجهة ---------- */
 document.querySelectorAll(".tab").forEach((t) =>
@@ -36,174 +15,196 @@ document.querySelectorAll(".tab").forEach((t) =>
 
 function setEngine(e) {
   engine = e;
-  lsSet("engine", e);
-  document.querySelectorAll(".tab").forEach((t) =>
-    t.classList.toggle("active", t.dataset.engine === e)
-  );
+  lsSet("stt_engine", e);
+  document.querySelectorAll(".tab").forEach((t) => t.classList.toggle("active", t.dataset.engine === e));
   $("azureSettings").hidden = e !== "azure";
+  $("whisperSettings").hidden = e !== "whisper";
   if (e === "azure" && !lsGet("azKey")) $("azureSettings").open = true;
-  stopAll();
-  fillVoices();
 }
-
-function fillVoices() {
-  voiceEl.innerHTML = "";
-  const list = engine === "azure"
-    ? AZURE_VOICES.map((v) => ({ value: v.id, text: v.label }))
-    : browserVoices.map((v, i) => ({ value: i, text: `${v.name} (${v.lang})` }));
-  list.forEach((o) => voiceEl.add(new Option(o.text, o.value)));
-
-  const saved = lsGet("voice_" + engine);
-  if (saved !== null && [...voiceEl.options].some((o) => o.value === saved)) voiceEl.value = saved;
-}
-
-voiceEl.addEventListener("change", () => lsSet("voice_" + engine, voiceEl.value));
-
-["rate", "pitch", "volume"].forEach((id) =>
-  $(id).addEventListener("input", (e) => ($(id + "Val").textContent = e.target.value))
-);
-
-const updateCount = () => ($("count").textContent = textEl.value.length);
-textEl.addEventListener("input", updateCount);
-updateCount();
 
 $("azKey").value = lsGet("azKey") || "";
 $("azRegion").value = lsGet("azRegion") || "";
 $("saveAz").addEventListener("click", () => {
   lsSet("azKey", $("azKey").value.trim());
   lsSet("azRegion", $("azRegion").value.trim().toLowerCase());
-  statusEl.textContent = "✅ تم حفظ الإعدادات";
   $("azureSettings").open = false;
+  setStatus("✅ تم حفظ الإعدادات");
 });
 
-/* ---------- أصوات المتصفح ---------- */
-function loadBrowserVoices() {
-  browserVoices = synth.getVoices().sort((a, b) => {
-    const r = (v) => (v.lang.startsWith("ar") ? 0 : 1) + (/natural|online/i.test(v.name) ? 0 : 0.5);
-    return r(a) - r(b) || a.name.localeCompare(b.name);
-  });
-  if (engine === "browser") fillVoices();
-}
-if (synth) {
-  loadBrowserVoices();
-  synth.onvoiceschanged = loadBrowserVoices;
-}
+$("lang").value = lsGet("stt_lang") || $("lang").value;
+$("lang").addEventListener("change", () => lsSet("stt_lang", $("lang").value));
 
-function splitText(text, max = 200) {
-  const parts = text.match(/[^.!?؟،\n]+[.!?؟،\n]*/g) || [text];
-  const chunks = [];
-  let cur = "";
-  parts.forEach((p) => {
-    if ((cur + p).length > max) { if (cur) chunks.push(cur); cur = p; }
-    else cur += p;
-  });
-  if (cur.trim()) chunks.push(cur);
-  return chunks;
-}
+/* ---------- اختيار الملف ---------- */
+const drop = $("drop");
+$("file").addEventListener("change", (e) => pickFile(e.target.files[0]));
+["dragover", "dragenter"].forEach((ev) =>
+  drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.add("over"); })
+);
+["dragleave", "drop"].forEach((ev) =>
+  drop.addEventListener(ev, (e) => { e.preventDefault(); drop.classList.remove("over"); })
+);
+drop.addEventListener("drop", (e) => pickFile(e.dataTransfer.files[0]));
 
-function speakBrowser(text) {
-  synth.cancel();
-  const voice = browserVoices[voiceEl.value];
-  const chunks = splitText(text);
-  chunks.forEach((chunk, i) => {
-    const u = new SpeechSynthesisUtterance(chunk);
-    if (voice) { u.voice = voice; u.lang = voice.lang; } else u.lang = "ar-EG";
-    u.rate = +$("rate").value;
-    u.pitch = +$("pitch").value;
-    u.volume = +$("volume").value;
-    if (i === 0) u.onstart = () => (statusEl.textContent = "🔊 جاري التشغيل...");
-    if (i === chunks.length - 1) u.onend = () => (statusEl.textContent = "✅ انتهى");
-    synth.speak(u);
-  });
+function pickFile(f) {
+  if (!f) return;
+  file = f;
+  $("dropText").textContent = `📄 ${f.name} (${(f.size / 1048576).toFixed(1)} MB)`;
+  const preview = $("preview");
+  preview.src = URL.createObjectURL(f);
+  preview.hidden = false;
+  startBtn.disabled = false;
+  setStatus("جاهز — اضغط حوّل لنص");
 }
 
-/* ---------- Azure Neural TTS ---------- */
-const escapeXml = (s) =>
-  s.replace(/[<>&'"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" }[c]));
+/* ---------- استخراج الصوت من الفيديو (16kHz mono) ---------- */
+async function extractAudio(f) {
+  setStatus("🎧 جاري استخراج الصوت من الفيديو...");
+  const buf = await f.arrayBuffer();
+  const ctx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+  let decoded;
+  try {
+    decoded = await ctx.decodeAudioData(buf);
+  } catch {
+    throw new Error("مش قادر أقرا الصوت من الملف ده. جرب MP4 أو MP3 أو WAV.");
+  } finally {
+    ctx.close();
+  }
+  // دمج القنوات لقناة واحدة
+  const len = decoded.length;
+  const mono = new Float32Array(len);
+  for (let c = 0; c < decoded.numberOfChannels; c++) {
+    const data = decoded.getChannelData(c);
+    for (let i = 0; i < len; i++) mono[i] += data[i] / decoded.numberOfChannels;
+  }
+  return mono;
+}
 
-const pct = (v) => { const p = Math.round((v - 1) * 100); return (p >= 0 ? "+" : "") + p + "%"; };
+function toWav(samples, rate = 16000) {
+  const buffer = new ArrayBuffer(44 + samples.length * 2);
+  const v = new DataView(buffer);
+  const w = (o, s) => [...s].forEach((ch, i) => v.setUint8(o + i, ch.charCodeAt(0)));
+  w(0, "RIFF"); v.setUint32(4, 36 + samples.length * 2, true); w(8, "WAVE");
+  w(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, rate, true); v.setUint32(28, rate * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  w(36, "data"); v.setUint32(40, samples.length * 2, true);
+  for (let i = 0; i < samples.length; i++) {
+    const s = Math.max(-1, Math.min(1, samples[i]));
+    v.setInt16(44 + i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+  }
+  return new Blob([buffer], { type: "audio/wav" });
+}
 
-async function speakAzure(text) {
+/* ---------- Azure Fast Transcription ---------- */
+async function transcribeAzure(samples, locale) {
   const key = lsGet("azKey");
   const region = lsGet("azRegion");
   if (!key || !region) {
     $("azureSettings").open = true;
-    return (statusEl.textContent = "⚠️ ادخل الـ Key والـ Region الأول واضغط حفظ");
+    throw new Error("ادخل الـ Key والـ Region الأول واضغط حفظ");
   }
 
-  const voice = voiceEl.value;
-  const lang = voice.split("-").slice(0, 2).join("-");
-  const ssml =
-    `<speak version="1.0" xmlns="http://www.w3.org/2001/10/synthesis" xml:lang="${lang}">` +
-    `<voice name="${voice}"><prosody rate="${pct(+$("rate").value)}" pitch="${pct(+$("pitch").value)}">` +
-    `${escapeXml(text)}</prosody></voice></speak>`;
+  setStatus("☁️ جاري الرفع والتحويل على Azure...");
+  showProgress(true, 50);
 
-  statusEl.textContent = "⏳ جاري التحويل...";
-  $("speak").disabled = true;
+  const form = new FormData();
+  form.append("audio", toWav(samples), "audio.wav");
+  form.append("definition", JSON.stringify({ locales: [locale] }));
+
+  let res;
   try {
-    const res = await fetch(`https://${region}.tts.speech.microsoft.com/cognitiveservices/v1`, {
-      method: "POST",
-      headers: {
-        "Ocp-Apim-Subscription-Key": key,
-        "Content-Type": "application/ssml+xml",
-        "X-Microsoft-OutputFormat": "audio-24khz-96kbitrate-mono-mp3",
-      },
-      body: ssml,
-    });
-    if (!res.ok) {
-      const msg = { 401: "المفتاح غلط أو الـ Region مش مطابق", 429: "تخطيت الحد المسموح، استنى شوية" }[res.status];
-      throw new Error(msg || `خطأ ${res.status}`);
-    }
-    const blob = await res.blob();
-    if (lastAudioUrl) URL.revokeObjectURL(lastAudioUrl);
-    lastAudioUrl = URL.createObjectURL(blob);
-
-    player.src = lastAudioUrl;
-    player.volume = +$("volume").value;
-    player.hidden = false;
-    downloadBtn.hidden = false;
-    await player.play();
-    statusEl.textContent = "🔊 جاري التشغيل...";
-  } catch (err) {
-    statusEl.textContent = "❌ " + (err.message === "Failed to fetch" ? "مشكلة في الاتصال أو الـ Region غلط" : err.message);
-  } finally {
-    $("speak").disabled = false;
+    res = await fetch(
+      `https://${region}.api.cognitive.microsoft.com/speechtotext/transcriptions:transcribe?api-version=2024-11-15`,
+      { method: "POST", headers: { "Ocp-Apim-Subscription-Key": key }, body: form }
+    );
+  } catch {
+    throw new Error("مشكلة في الاتصال أو الـ Region غلط");
   }
+  if (!res.ok) {
+    const msg = { 401: "المفتاح غلط أو الـ Region مش مطابق", 429: "تخطيت الحد المسموح، استنى شوية" }[res.status];
+    throw new Error(msg || `خطأ ${res.status}: ${await res.text()}`);
+  }
+  const data = await res.json();
+  segments = (data.phrases || []).map((p) => ({
+    start: p.offsetMilliseconds / 1000,
+    end: (p.offsetMilliseconds + p.durationMilliseconds) / 1000,
+    text: p.text,
+  }));
+  return (data.combinedPhrases || []).map((p) => p.text).join("\n") || segments.map((s) => s.text).join(" ");
 }
 
-player.addEventListener("ended", () => (statusEl.textContent = "✅ انتهى"));
+/* ---------- Whisper (داخل المتصفح) ---------- */
+function transcribeWhisper(samples, language) {
+  return new Promise((resolve, reject) => {
+    if (!worker) worker = new Worker("worker.js", { type: "module" });
+    worker.onmessage = ({ data }) => {
+      if (data.type === "status") setStatus(data.text);
+      else if (data.type === "progress") showProgress(true, data.value);
+      else if (data.type === "done") { segments = data.segments; resolve(data.text); }
+      else if (data.type === "error") reject(new Error(data.text));
+    };
+    worker.onerror = (e) => reject(new Error(e.message || "خطأ في تحميل Whisper"));
+    worker.postMessage({ audio: samples, model: $("model").value, language }, [samples.buffer]);
+  });
+}
 
-downloadBtn.addEventListener("click", () => {
-  if (!lastAudioUrl) return;
+/* ---------- تشغيل ---------- */
+startBtn.addEventListener("click", async () => {
+  if (!file) return;
+  startBtn.disabled = true;
+  output.value = "";
+  segments = [];
+  const [locale, whisperLang] = $("lang").value.split("|");
+  const t0 = performance.now();
+  try {
+    const samples = await extractAudio(file);
+    const text = engine === "azure"
+      ? await transcribeAzure(samples, locale)
+      : await transcribeWhisper(samples, whisperLang);
+    output.value = text || "(مفيش كلام اتعرف عليه)";
+    showProgress(true, 100);
+    setStatus(`✅ خلص في ${((performance.now() - t0) / 1000).toFixed(0)} ثانية`);
+  } catch (err) {
+    setStatus("❌ " + err.message);
+  } finally {
+    startBtn.disabled = false;
+    setTimeout(() => showProgress(false), 1500);
+  }
+});
+
+/* ---------- نسخ وتحميل ---------- */
+$("copy").addEventListener("click", async () => {
+  try { await navigator.clipboard.writeText(output.value); setStatus("📋 تم النسخ"); }
+  catch { output.select(); document.execCommand("copy"); }
+});
+
+$("dlTxt").addEventListener("click", () => download(output.value, "txt", "text/plain"));
+
+$("dlSrt").addEventListener("click", () => {
+  if (!segments.length) return setStatus("مفيش توقيتات — حوّل فيديو الأول");
+  const fmt = (t) => {
+    const ms = Math.round(t * 1000);
+    const p = (n, l = 2) => String(n).padStart(l, "0");
+    return `${p(Math.floor(ms / 3600000))}:${p(Math.floor(ms / 60000) % 60)}:${p(Math.floor(ms / 1000) % 60)},${p(ms % 1000, 3)}`;
+  };
+  const srt = segments.map((s, i) => `${i + 1}\n${fmt(s.start)} --> ${fmt(s.end)}\n${s.text}\n`).join("\n");
+  download(srt, "srt", "application/x-subrip");
+});
+
+function download(content, ext, type) {
+  if (!content.trim()) return setStatus("مفيش نص للتحميل");
   const a = document.createElement("a");
-  a.href = lastAudioUrl;
-  a.download = `tts-${Date.now()}.mp3`;
+  a.href = URL.createObjectURL(new Blob(["﻿" + content], { type: type + ";charset=utf-8" }));
+  const base = file ? file.name.replace(/\.[^.]+$/, "") : "transcript";
+  a.download = `${base}.${ext}`;
   a.click();
-});
-
-/* ---------- الأزرار ---------- */
-$("speak").addEventListener("click", () => {
-  const text = textEl.value.trim();
-  if (!text) return (statusEl.textContent = "اكتب نصًا أولاً");
-  engine === "azure" ? speakAzure(text) : speakBrowser(text);
-});
-
-$("pause").addEventListener("click", () => {
-  if (engine === "azure") player.pause(); else synth.pause();
-  statusEl.textContent = "⏸ متوقف مؤقتًا";
-});
-$("resume").addEventListener("click", () => {
-  if (engine === "azure") player.play(); else synth.resume();
-  statusEl.textContent = "🔊 جاري التشغيل...";
-});
-$("stop").addEventListener("click", () => { stopAll(); statusEl.textContent = "⏹ تم الإيقاف"; });
-
-function stopAll() {
-  if (synth) synth.cancel();
-  player.pause();
-  player.currentTime = 0;
 }
 
+/* ---------- مساعدات ---------- */
+function setStatus(t) { statusEl.textContent = t; }
+function showProgress(show, value = 0) {
+  $("progressWrap").hidden = !show;
+  $("progressBar").style.width = value + "%";
+}
 function lsGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
 function lsSet(k, v) { try { localStorage.setItem(k, v); } catch {} }
 
